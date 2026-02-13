@@ -2,6 +2,8 @@
 #include <windows.h>
 #include <cstdint>
 
+
+//the clock seems to be not working properly its innacurate half the time.. you gotta fix this .. IMPORTANT!!
 class Timer {
 private:
     LARGE_INTEGER frequency_;
