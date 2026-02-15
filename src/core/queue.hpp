@@ -14,12 +14,18 @@ class SPSCQueue {
 		alignas(64) std::atomic<size_t> _tail{ 0 };
 		alignas(64) std::atomic<size_t> _head{ 0 };
 
-		std::unique_ptr<std::array<T, capacity>> _buffer;
+		/*std::unique_ptr<std::array<T, capacity>> _buffer;*/
+
+		std::array<T, capacity> _buffer;
+		
 
 		static constexpr size_t MASK = capacity - 1 ;
 
 	public:
-		SPSCQueue() : _buffer(std::make_unique<std::array<T, capacity>>()){}
+		/*SPSCQueue() : _buffer(std::make_unique<std::array<T, capacity>>()){}*/
+
+		SPSCQueue() : _buffer{} {};
+
 
 		bool try_push(T&& item){
 			size_t current_tail = _tail.load(std::memory_order_relaxed);
@@ -31,7 +37,7 @@ class SPSCQueue {
 				return false;
 			}
 
-			(*_buffer)[current_tail] = std::move(item); 
+			_buffer[current_tail] = std::move(item); 
 			_tail.store(next_tail, std::memory_order_release);
 			return true;
 		}
@@ -44,7 +50,7 @@ class SPSCQueue {
 				return false;
 			}
 
-			item = std::move((*_buffer)[current_head]);
+			item = std::move(_buffer[current_head]);
 			size_t next_head = current_head + 1 & MASK;
 			_head.store(next_head, std::memory_order_release);
 			return true;
