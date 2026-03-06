@@ -38,7 +38,7 @@ void benchmark_latency() {
 
 
 	TestQueue queue;
-	uint64_t ITERATIONS = 10000000;
+	uint64_t ITERATIONS = 100000000;
 
 	std::vector<uint64_t> latencies;
 	Timer timer;
@@ -77,7 +77,7 @@ void benchmark_throughput() {
 	std::cout << "\n=== Throughput Benchmark ===\n";
 
 	TestQueue queue;
-	uint64_t MESSAGES = 100000000;
+	uint64_t MESSAGES = 10000000000;
 	Timer timer;
 
 	std::atomic<bool> producer_done{ false };

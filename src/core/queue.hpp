@@ -51,7 +51,7 @@ class SPSCQueue {
 			}
 
 			item = std::move(_buffer[current_head]);
-			size_t next_head = current_head + 1 & MASK;
+			size_t next_head = (current_head + 1) & MASK;
 			_head.store(next_head, std::memory_order_release);
 			return true;
 		}
