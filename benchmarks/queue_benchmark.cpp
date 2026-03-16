@@ -77,7 +77,7 @@ void benchmark_throughput() {
 	std::cout << "\n=== Throughput Benchmark ===\n";
 
 	TestQueue queue;
-	uint64_t MESSAGES = 10000000000;
+	uint64_t MESSAGES = 1000000000;
 	Timer timer;
 
 	std::atomic<bool> producer_done{ false };
