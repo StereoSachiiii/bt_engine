@@ -1,47 +1,51 @@
 #pragma once
 #include "utils/taggedPtr.hpp"
-#include "order.hpp"
-#include<atomic>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <new>
+#include <type_traits>
 
 
 
 template<typename T, size_t MaxObjects>
 class ObjectPool {
     static_assert(sizeof(T) >= sizeof(void*),
-        "T must be large enough to store a pointer");
+        "T must be at least pointer-sized: the free-list stores a next-pointer "
+        "directly inside each slot. Use a wrapper struct if T is smaller than void*.");
+
+    static_assert(alignof(T) >= alignof(void*),
+        "T alignment must be at least pointer-aligned for safe next-pointer storage.");
 
 private:
 
-    alignas(64) std::array<T, MaxObjects> storage_;
+    // Raw memory — 
+    using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
+    alignas(64) std::array<Storage, MaxObjects> storage_;
 
     // Lock-free stack head (128-bit atomic)
     alignas(16) std::atomic<TaggedPtr> free_list_head_;
 
-    // Debug: track allocations
+    // track allocations
     std::atomic<size_t> allocated_count_{ 0 };
 
 public:
-    //pimpl later idiot
     ObjectPool() {
-        // 1. Link all objects except the last one
+        // Link 
         for (size_t i = 0; i < MaxObjects - 1; i++) {
             set_next(&storage_[i], &storage_[i + 1]);
         }
 
-        // 2. The last object marks the end of the list
         set_next(&storage_[MaxObjects - 1], nullptr);
-
-        // 3. Point the head to the first object in the array
 
         free_list_head_.store(TaggedPtr(&storage_[0], 0));
     };
 
-    
     ~ObjectPool() = default;
 
+    //  construct T in-place
     T* allocate() {
-        TaggedPtr old_head = free_list_head_.load(_Atomic_memory_order_acquire);
-
+        TaggedPtr old_head = free_list_head_.load(std::memory_order_acquire);
 
         while (old_head.ptr != nullptr) {
 
@@ -57,13 +61,20 @@ public:
             )) {
 
                 allocated_count_.fetch_add(1, std::memory_order_relaxed);
-                return reinterpret_cast<T*>(old_head.ptr);
+
+                // Construct T in raw memory via placement new
+                return new (old_head.ptr) T();
             }
         }
         return nullptr;
-  
-    };    void deallocate(T* obj) {
+    }
+
+    // Destroy T, push raw memory
+    void deallocate(T* obj) {
         if (!obj) return;
+
+        // Destroy 
+        obj->~T();
 
         TaggedPtr old_head = free_list_head_.load(std::memory_order_acquire);
         TaggedPtr new_head;
@@ -98,26 +109,3 @@ private:
         *reinterpret_cast<void**>(node) = next;
     }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

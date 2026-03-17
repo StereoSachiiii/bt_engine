@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10)
 project(hft_engine)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -19,3 +19,9 @@ add_executable(queue_benchmark
     benchmarks/queue_benchmark.cpp
 )
 target_link_libraries(queue_benchmark PRIVATE hft_core)
+
+
+add_executable(object_pool_test
+    tests/object_pool_test.cpp
+)
+target_link_libraries(object_pool_test PRIVATE hft_core)
