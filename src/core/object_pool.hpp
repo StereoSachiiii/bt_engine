@@ -60,25 +60,41 @@ public:
         }
         return nullptr;
   
-    };
-//  void deallocate(T* obj);
-//
-//    size_t available() const {
-//        return MaxObjects - allocated_count_.load(std::memory_order_relaxed);
-//    }
-//
-//    size_t capacity() const { return MaxObjects; }
-//
-//private:
-//    // Helper: get next pointer from free object
-//    static void* get_next(void* node) {
-//        return *reinterpret_cast<void**>(node);
-//    }
-//
-//    // Helper: set next pointer in free object
-//    static void set_next(void* node, void* next) {
-//        *reinterpret_cast<void**>(node) = next;
-//    }
+    };    void deallocate(T* obj) {
+        if (!obj) return;
+
+        TaggedPtr old_head = free_list_head_.load(std::memory_order_acquire);
+        TaggedPtr new_head;
+
+        do {
+            set_next(obj, old_head.ptr);
+            new_head = TaggedPtr(obj, old_head.tag + 1);
+        } while (!free_list_head_.compare_exchange_weak(
+            old_head,
+            new_head,
+            std::memory_order_release,
+            std::memory_order_acquire
+        ));
+
+        allocated_count_.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    size_t available() const {
+        return MaxObjects - allocated_count_.load(std::memory_order_relaxed);
+    }
+
+    size_t capacity() const { 
+        return MaxObjects; 
+    }
+
+private:
+    static void* get_next(void* node) {
+        return *reinterpret_cast<void**>(node);
+    }
+
+    static void set_next(void* node, void* next) {
+        *reinterpret_cast<void**>(node) = next;
+    }
 };
 
 
@@ -101,4 +117,5 @@ public:
 
 
 
-}
+
+
