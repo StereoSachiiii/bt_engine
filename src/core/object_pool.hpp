@@ -44,8 +44,10 @@ public:
 
 
         while (old_head.ptr != nullptr) {
+
+            void* next = get_next(old_head.ptr);
            
-            TaggedPtr new_head(old_head.ptr, old_head.tag);
+            TaggedPtr new_head(next, old_head.tag + 1);
 
             if (free_list_head_.compare_exchange_weak(
                 old_head,
