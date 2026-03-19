@@ -21,7 +21,17 @@ add_executable(queue_benchmark
 target_link_libraries(queue_benchmark PRIVATE hft_core)
 
 
+# ---- Object pool test executable ----
 add_executable(object_pool_test
     tests/object_pool_test.cpp
 )
 target_link_libraries(object_pool_test PRIVATE hft_core)
+
+# ---- ITCH test executable ----
+add_executable(test_itch
+    tests/test_itch.cpp
+)
+target_link_libraries(test_itch PRIVATE hft_core)
+if(WIN32)
+    target_link_libraries(test_itch PRIVATE ws2_32)
+endif()
