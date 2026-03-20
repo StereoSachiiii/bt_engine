@@ -12,7 +12,17 @@ struct Order {
     char     reserved[30];
 
     
-    Order() :Order() {};
+    Order()
+        : order_ref(0),
+        timestamp_ns(0),
+        price(0.0),
+        shares(0),
+        stock{},
+        side(0),
+        msg_type(0),
+        reserved{}
+    {
+    }
 };
 
 static_assert(sizeof(Order) == 64, "Order must be 64 bytes");

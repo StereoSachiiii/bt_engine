@@ -1,4 +1,4 @@
-﻿{
+{
   "version": 3,
   "configurePresets": [
     {
@@ -49,7 +49,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "/W4 /WX /fsanitize=address"
+        "CMAKE_CXX_FLAGS": "/W4 /WX /EHsc /Zi /fsanitize=address"
       }
     },
     {
@@ -62,7 +62,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "/W4 /WX /O2 /GL /DNDEBUG",
+        "CMAKE_CXX_FLAGS": "/W4 /WX /EHsc /O2 /GL /DNDEBUG",
         "CMAKE_EXE_LINKER_FLAGS": "/LTCG"
       }
     },

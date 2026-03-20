@@ -46,12 +46,12 @@ void benchmark_latency() {
 	latencies.reserve(ITERATIONS);
 
 
-	for (int i = 0; i < ITERATIONS; ++i) {
-		uint64_t pushed = i;
+	for (uint64_t i = 0; i < ITERATIONS; ++i) {
+		int pushed = static_cast<int>(i);
 		timer.start();
 
 		
-		queue.try_push(pushed);
+		queue.try_push(std::move(pushed));
 
 		int popped;
 		queue.try_pop(popped);
@@ -77,7 +77,7 @@ void benchmark_throughput() {
 	std::cout << "\n=== Throughput Benchmark ===\n";
 
 	TestQueue queue;
-	uint64_t MESSAGES = 1000000000;
+	uint64_t MESSAGES = 10000000;
 	Timer timer;
 
 	std::atomic<bool> producer_done{ false };
@@ -90,7 +90,7 @@ void benchmark_throughput() {
 				std::this_thread::yield();
 			}
 		}
-		producer_done.store(false);
+		producer_done.store(true);
 		});
 
 	timer.start();
@@ -100,7 +100,7 @@ void benchmark_throughput() {
 		//while messages are not still over
 		while (messages_consumed.load() < MESSAGES) {
 			//if the queue is not empty
-			if (!queue.try_pop(popped)) {
+			if (queue.try_pop(popped)) {
 				messages_consumed.fetch_add(1);
 			}
 			else if (producer_done.load()) {

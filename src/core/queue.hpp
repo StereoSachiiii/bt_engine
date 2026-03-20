@@ -1,8 +1,14 @@
-#include<cstddef>
+#pragma once
+#include <cstddef>
 #include<array>
 #include<memory>
 #include<atomic>
 
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4324) // structure was padded due to alignment specifier
+#endif
 
 template<typename T,size_t capacity>
 class SPSCQueue {
@@ -72,3 +78,7 @@ class SPSCQueue {
 
 
 };
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
