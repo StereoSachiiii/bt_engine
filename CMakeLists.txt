@@ -51,3 +51,15 @@ if(WIN32)
     )
     target_link_libraries(window_test PRIVATE user32)
 endif()
+
+
+add_executable(itch_parser_test
+    tests/itch_parser_test.cpp
+)
+target_link_libraries(itch_parser_test PRIVATE hft_core)
+
+# ---- Realistic ITCH benchmark executable ----
+add_executable(realistic_itch_benchmark
+    benchmarks/realistic_itch_benchmark.cpp
+)
+target_link_libraries(realistic_itch_benchmark PRIVATE hft_core)

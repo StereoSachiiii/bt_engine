@@ -32,9 +32,10 @@ public:
     uint64_t elapsed_ns() const {
         LARGE_INTEGER end;
         QueryPerformanceCounter(&end);
-        // get number of sticks from start() to calling elapsed_ns()
+        // get number of ticks from start() to calling elapsed_ns()
         uint64_t elapsed = end.QuadPart - start_.QuadPart;
-        return static_cast<uint64_t>(elapsed) * 1'000'000'000ULL / frequency_.QuadPart;
+        // Use double to avoid integer overflow: (ticks / freq) * 1e9
+        return static_cast<uint64_t>(static_cast<double>(elapsed) / static_cast<double>(frequency_.QuadPart) * 1'000'000'000.0);
     }
 
     uint64_t elapsed_us() const {

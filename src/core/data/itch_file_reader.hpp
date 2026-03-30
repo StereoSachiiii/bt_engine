@@ -3,15 +3,14 @@
 #include <cstdint>
 #include <cstring>
 
-
 class ITCHReader {
-	
+
 private:
 	FILE* file_ = nullptr;
-
+	static constexpr size_t buffer_size = 8192;  // Max message size
 
 public:
-	
+
 	~ITCHReader() {
 		close();
 	}
@@ -24,16 +23,16 @@ public:
 	}
 
 	bool open(const char* filename) {
-	
+
 		file_ = fopen(filename, "rb");
 		return file_ != nullptr;
-	
+
 	}
 
 	bool read_next(uint8_t* buffer, size_t& length) {
 		if (!file_) return false;
 
-		
+
 		uint8_t len_bytes[2];
 		if (fread(len_bytes, 1, 2, file_) != 2) {		
 			return false;
@@ -55,11 +54,11 @@ public:
 		if (fread(buffer, 1, msg_len, file_) != msg_len) {
 			return false;
 		}
-		
+
 
 
 
 		length = msg_len;
 		return true;
 	}
-}
+};

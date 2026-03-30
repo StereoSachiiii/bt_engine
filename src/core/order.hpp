@@ -9,7 +9,7 @@ struct Order {
     char     stock[8]; //done
     char     side;  //done
     char     msg_type; //done
-    char     reserved[30];
+    char     reserved[26];
 
     
     Order()

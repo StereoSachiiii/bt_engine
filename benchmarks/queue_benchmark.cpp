@@ -117,13 +117,13 @@ void benchmark_throughput() {
 	consumer.join();
 
 	uint64_t elapsed_ns = timer.elapsed_ns();
-	double elapsed_s = elapsed_ns / 1e9;
-	double throughput = MESSAGES / elapsed_s;
+	double elapsed_s = static_cast<double>(elapsed_ns) / 1e9;
+	double throughput = static_cast<double>(MESSAGES) / elapsed_s;
 
 	std::cout << "Messages:   " << MESSAGES << "\n";
 	std::cout << "Duration:   " << elapsed_s << "s\n";
 	std::cout << "Throughput: " << (throughput / 1e6) << "M msgs/sec\n";
-	std::cout << "Avg latency:" << (elapsed_ns / MESSAGES) << "ns/msg\n";
+	std::cout << "Avg latency:" << (static_cast<double>(elapsed_ns) / static_cast<double>(MESSAGES)) << "ns/msg\n";
 		
 }
 
