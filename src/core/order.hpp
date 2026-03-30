@@ -2,13 +2,13 @@
 #include <cstdint>
 
 struct Order {
-    uint64_t order_ref;
-    uint64_t timestamp_ns;
-    double   price;
-    uint32_t shares;
-    char     stock[8];
-    char     side;
-    char     msg_type;
+    uint64_t order_ref; //done
+    uint64_t timestamp_ns; // done
+    double   price; 
+    uint32_t shares; //done
+    char     stock[8]; //done
+    char     side;  //done
+    char     msg_type; //done
     char     reserved[30];
 
     
