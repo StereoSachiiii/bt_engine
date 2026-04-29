@@ -1,48 +1,46 @@
 #pragma once
-#include <windows.h>
+#include <chrono>
 #include <cstdint>
 
-
-//the clock seems to be not working properly its innacurate half the time.. you gotta fix this .. IMPORTANT!!
+/**
+ * @brief High-resolution monotonic timer for performance measurement.
+ * Uses std::chrono::steady_clock for cross-platform accuracy and nanosecond precision.
+ */
 class Timer {
 private:
-    LARGE_INTEGER frequency_;
-    LARGE_INTEGER start_;
+    std::chrono::steady_clock::time_point start_;
 
 public:
     Timer() {
-        //this hook stores the number of ticks per second ns etc into the arg
-        QueryPerformanceFrequency(&frequency_);
+        start();
     }
 
+    /**
+     * @brief Resets the timer to the current time point.
+     */
     void start() {
-        //marks the begninning
-        //this hook stores the current tick number of the system
-        QueryPerformanceCounter(&start_);
+        start_ = std::chrono::steady_clock::now();
     }
 
-    LARGE_INTEGER get_start() {
-        return start_;
-    }
-    
-    LARGE_INTEGER get_freq() {
-        return frequency_;
-    }
-
+    /**
+     * @return Elapsed time in nanoseconds.
+     */
     uint64_t elapsed_ns() const {
-        LARGE_INTEGER end;
-        QueryPerformanceCounter(&end);
-        // get number of ticks from start() to calling elapsed_ns()
-        uint64_t elapsed = end.QuadPart - start_.QuadPart;
-        // Use double to avoid integer overflow: (ticks / freq) * 1e9
-        return static_cast<uint64_t>(static_cast<double>(elapsed) / static_cast<double>(frequency_.QuadPart) * 1'000'000'000.0);
+        auto end = std::chrono::steady_clock::now();
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count();
     }
 
+    /**
+     * @return Elapsed time in microseconds.
+     */
     uint64_t elapsed_us() const {
         return elapsed_ns() / 1000;
     }
 
+    /**
+     * @return Elapsed time in milliseconds.
+     */
     uint64_t elapsed_ms() const {
-        return elapsed_ns() / 1'000'000;
+        return elapsed_ns() / 1000000;
     }
-};
+};
