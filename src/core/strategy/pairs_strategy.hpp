@@ -32,12 +32,12 @@ private:
 public:
     PairsStrategy(uint16_t a, uint16_t b) : locate_a_(a), locate_b_(b) {}
 
-    void on_event(const Order& event, const OrderBookManager& manager) override {
+    void on_event(const Order& event, const OrderBookManager& manager) {
         if (event.stock_locate == locate_a_) matcher_a_.on_message(event, pos_mgr_, manager);
         if (event.stock_locate == locate_b_) matcher_b_.on_message(event, pos_mgr_, manager);
     }
 
-    void on_order_book_update(uint16_t locate, const OrderBook& book) override {
+    void on_order_book_update(uint16_t locate, const OrderBook& book) {
         if (locate != locate_a_ && locate != locate_b_) return;
 
         double mid = book.weighted_mid();
@@ -86,5 +86,5 @@ public:
 
     }
 
-    void on_trade(uint16_t, double, uint32_t) override {}
+    void on_trade(uint16_t, double, uint32_t) {}
 };

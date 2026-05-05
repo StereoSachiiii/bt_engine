@@ -31,7 +31,6 @@ STATS calculate_stats(std::vector<uint64_t>& data) {
 
 }
 
-///take the queue push something pop something then just store the latancies in the vector
 
 void benchmark_latency() {
 	std::cout << "=== Latency Benchmark ===\n";
@@ -97,9 +96,7 @@ void benchmark_throughput() {
 
 	std::thread consumer([&]() {
 		int popped;
-		//while messages are not still over
 		while (messages_consumed.load() < MESSAGES) {
-			//if the queue is not empty
 			if (queue.try_pop(popped)) {
 				messages_consumed.fetch_add(1);
 			}

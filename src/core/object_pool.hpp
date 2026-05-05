@@ -6,16 +6,21 @@
 #include <new>
 #include <type_traits>
 
+#include "utils/compiler.hpp"
+
+#ifdef _MSC_VER
+#pragma warning(disable: 4996)  // aligned_storage_t deprecated in C++23 but we using it correctly
+#endif
+
 
 
 /**
- * @brief Thread-safe, lock-free object pool for high-concurrency environments.
+ * @brief Thread-safe, lock-free pool.
  * Uses a TaggedPtr to prevent the ABA problem in the lock-free stack.
  */
 template<typename T, size_t MaxObjects>
 class ObjectPool {
-    // We store the 'next' pointer directly in the raw memory of the object slots.
-    // Therefore, T must be large enough to hold at least one pointer.
+
     static_assert(sizeof(T) >= sizeof(void*),
         "T must be at least pointer-sized: the free-list stores a next-pointer "
         "directly inside each slot.");
@@ -54,7 +59,7 @@ public:
      * @brief Allocates an object from the pool in a lock-free manner.
      * @return Pointer to the constructed object, or nullptr if pool is empty.
      */
-    T* allocate() {
+    FORCE_INLINE T* allocate() {
         TaggedPtr old_head = free_list_head_.load(std::memory_order_acquire);
 
         while (old_head.ptr != nullptr) {
@@ -69,7 +74,6 @@ public:
                 std::memory_order_acquire
             )) {
                 allocated_count_.fetch_add(1, std::memory_order_relaxed);
-                //construct at the addr start lifetime
                 return new (old_head.ptr) T();
             }
         }
@@ -80,16 +84,14 @@ public:
      * @brief Returns an object to the pool.
      * @param obj Pointer to the object to deallocate.
      */
-    void deallocate(T* obj) {
+    FORCE_INLINE void deallocate(T* obj) {
         if (!obj) return;
 
-        // Manually call the destructor since we used placement new.
         obj->~T();
 
         TaggedPtr old_head = free_list_head_.load(std::memory_order_acquire);
         TaggedPtr new_head;
 
-        // Push the raw memory back onto the lock-free stack.
         do {
             set_next(obj, old_head.ptr);
             new_head = TaggedPtr(obj, old_head.tag + 1);
@@ -112,22 +114,20 @@ public:
     }
 
 private:
-    // Helper to read the hidden 'next' pointer from a memory slot.
     static void* get_next(void* node) {
         return *reinterpret_cast<void**>(node);
     }
 
-    // Helper to write the hidden 'next' pointer into a memory slot.
     static void set_next(void* node, void* next) {
         *reinterpret_cast<void**>(node) = next;
     }
 };
 
 
-/**
- * @brief High-performance object pool for single-threaded use.
- * Removes all atomic overhead for use in partitioned (SPSC-n) architectures.
- */
+/*
+object pool for single-threaded use.
+lock-free, no atomic overhead for use in partitioned (SPSC-n) architectures.
+*/
 template<typename T, size_t MaxObjects>
 class SingleThreadedObjectPool {
     static_assert(sizeof(T) >= sizeof(void*), "T must be at least pointer-sized");
@@ -154,7 +154,7 @@ public:
         _aligned_free(storage_);
     }
 
-    T* allocate() {
+    FORCE_INLINE T* allocate() {
         if (!free_list_head_) return nullptr;
 
         void* ptr = free_list_head_;
@@ -164,7 +164,7 @@ public:
         return new (ptr) T();
     }
 
-    void deallocate(T* obj) {
+    FORCE_INLINE void deallocate(T* obj) {
         if (!obj) return;
         obj->~T();
         set_next(obj, free_list_head_);

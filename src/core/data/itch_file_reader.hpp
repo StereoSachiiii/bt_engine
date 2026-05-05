@@ -4,61 +4,70 @@
 #include <cstring>
 
 class ITCHReader {
-
 private:
-	FILE* file_ = nullptr;
-	static constexpr size_t buffer_size = 8192;  // Max message size
+    FILE* file_ = nullptr;
+    static constexpr size_t buffer_size = 8192;
+	bool raw_mode_ = false;
 
 public:
+	void set_raw_mode(bool raw) { raw_mode_ = raw; }
 
 	~ITCHReader() {
 		close();
 	}
 
 	void close() {
-
 		if (!file_) return;
 		fclose(file_);
 		file_ = nullptr;
 	}
 
 	bool open(const char* filename) {
-
 		file_ = fopen(filename, "rb");
 		return file_ != nullptr;
-
 	}
 
 	bool read_next(uint8_t* buffer, size_t& length) {
 		if (!file_) return false;
 
+		if (raw_mode_) {
+			// Skip any null padding 
+			uint8_t type = 0;
+			while (true) {
+				if (fread(&type, 1, 1, file_) != 1) return false;
+				if (type != 0) break;
+			}
+			buffer[0] = type;
+			size_t msg_len = get_raw_msg_len(type);
+			if (msg_len == 0) return false;
 
-		uint8_t len_bytes[2];
-		if (fread(len_bytes, 1, 2, file_) != 2) {		
-			return false;
+			if (fread(buffer + 1, 1, msg_len - 1, file_) != (msg_len - 1)) return false;
+			length = msg_len;
+			return true;
+		} else {
+			// SoupBinTCP mode (2-byte length prefix)
+			uint8_t len_bytes[2];
+			if (fread(len_bytes, 1, 2, file_) != 2) return false;
+			uint16_t msg_len = (static_cast<uint16_t>(len_bytes[0]) << 8) | static_cast<uint16_t>(len_bytes[1]);
+			if (msg_len == 0 || msg_len > buffer_size) return false;
+
+			if (fread(buffer, 1, msg_len, file_) != msg_len) return false;
+			length = msg_len;
+			return true;
 		}
+	}
 
-		// a little bit of bitwise math for it. basically
-		// shift 8 bytes to the left and OR them . it's like
-		// 1,0 -> 10 OR 1 -> 11 , but the thing is isnt this pushing the 
-		// first byte beyond? because it's like pushed beyond the first 8 bytes 
-		//to the left , why does the compiler do allow this
-
-		//i use static cast to sidestep that at least show intent even though coversion is implicit
-		uint16_t msg_len = (static_cast<uint16_t>(len_bytes[0]) << 8) | static_cast<uint16_t>(len_bytes[1]);
-
-		if (msg_len == 0 || msg_len > buffer_size) {
-			return false;
+private:
+	static size_t get_raw_msg_len(uint8_t type) {
+		switch (type) {
+			case 'S': return 12; case 'R': return 39; case 'H': return 25;
+			case 'Y': return 20; case 'L': return 26; case 'V': return 35;
+			case 'W': return 12; case 'K': return 28; case 'J': return 35;
+			case 'h': return 21; case 'A': return 36; case 'F': return 40;
+			case 'E': return 31; case 'C': return 36; case 'X': return 23;
+			case 'D': return 19; case 'U': return 35; case 'P': return 44;
+			case 'Q': return 40; case 'B': return 19; case 'I': return 50;
+			case 'N': return 20; default: return 0;
 		}
-
-		if (fread(buffer, 1, msg_len, file_) != msg_len) {
-			return false;
-		}
-
-
-
-
-		length = msg_len;
-		return true;
 	}
 };

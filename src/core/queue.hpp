@@ -3,11 +3,12 @@
 #include<array>
 #include<memory>
 #include<atomic>
+#include<utility>
 
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4324) // structure was padded due to alignment specifier
+#pragma warning(disable: 4324) 
 #endif
 
 template<typename T,size_t capacity>
@@ -33,7 +34,8 @@ class SPSCQueue {
 		SPSCQueue() : _buffer{} {};
 
 
-		bool try_push(T&& item){
+		template<typename U>
+		bool try_push(U&& item){
 			size_t current_tail = _tail.load(std::memory_order_relaxed);
 			size_t next_tail = (current_tail + 1) & MASK;
 
@@ -43,7 +45,7 @@ class SPSCQueue {
 				return false;
 			}
 
-			_buffer[current_tail] = std::move(item); 
+			_buffer[current_tail] = std::forward<U>(item); 
 			_tail.store(next_tail, std::memory_order_release);
 			return true;
 		}
@@ -77,6 +79,61 @@ class SPSCQueue {
 		
 
 
+};
+
+template<typename T, size_t capacity>
+class SPMCQueue {
+    static_assert((capacity & (capacity - 1)) == 0, "capacity must be a power of 2");
+
+private:
+    alignas(64) std::atomic<size_t> _tail{ 0 };
+    alignas(64) std::atomic<size_t> _head{ 0 };
+    alignas(64) std::atomic<size_t> _free_idx{ 0 };
+    
+    std::array<T, capacity> _buffer;
+    static constexpr size_t MASK = capacity - 1;
+
+public:
+    SPMCQueue() : _buffer{} {}
+
+    template<typename U>
+    bool try_push(U&& item) {
+        size_t current_tail = _tail.load(std::memory_order_relaxed);
+        size_t next_tail = (current_tail + 1) & MASK;
+
+        if (next_tail == (_free_idx.load(std::memory_order_acquire) & MASK)) {
+            return false;
+        }
+
+        _buffer[current_tail] = std::forward<U>(item);
+        _tail.store(next_tail, std::memory_order_release);
+        return true;
+    }
+
+    bool try_pop(T& item) {
+        size_t current_head = _head.load(std::memory_order_relaxed);
+        while (true) {
+            size_t current_tail = _tail.load(std::memory_order_acquire);
+            if (current_head == current_tail) {
+                return false;
+            }
+
+            size_t next_head = (current_head + 1) & MASK;
+            if (_head.compare_exchange_weak(current_head, next_head,
+                                            std::memory_order_acquire,
+                                            std::memory_order_relaxed)) {
+                item = std::move(_buffer[current_head]);
+                _free_idx.fetch_add(1, std::memory_order_release);
+                return true;
+            }
+            
+        }
+    }
+	//block everything
+    SPMCQueue(const SPMCQueue&) = delete;
+    SPMCQueue& operator=(const SPMCQueue&) = delete;
+    SPMCQueue(SPMCQueue&&) = delete;
+    SPMCQueue& operator=(SPMCQueue&&) = delete;
 };
 
 #ifdef _MSC_VER

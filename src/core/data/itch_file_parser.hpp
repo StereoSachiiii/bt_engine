@@ -1,85 +1,10 @@
 #pragma once
-#include "../order.hpp"
+#include "../types/order.hpp"
 #include <cstdint>
 #include <cstring>
+#include <array>
 #include <intrin.h>
 #include <stdlib.h>
-//
-////change this this is a heavy bottleneck try to figure out how to use this properly without a bunch of loops
-//class ITCHParser {
-//
-//
-//static Order parse_add_order(const uint8_t* data) {
-//		Order order;
-//
-//		
-//		//type of the message
-//		order.msg_type = data[0];
-//
-//		// timestamp
-//		uint64_t timestamp = 0;
-//		for (int i = 0; i < 6; i++) {
-//			timestamp = (timestamp << 8) | data[5 + i];
-//		}
-//		order.timestamp_ns = timestamp;
-//
-//		//referece number
-//		uint64_t order_ref = 0;
-//		for (int i = 0; i < 8; i++) {
-//			order_ref = (order_ref << 8) | data[11 + i];
-//		}
-//		order.order_ref = order_ref;
-//
-//
-//		//buy or sell
-//		order.side = data[19];
-//		uint32_t shares = 0;
-//		for (int j = 0; j < 4; j++) {
-//			shares = (shares << 8) | data[20 + j];
-//		}
-//		order.shares = shares;
-//
-//		//stock symbol 
-//		char stock[8];
-//		for (int k = 0; k < 8; k++) {
-//			order.stock[k] = data[24 + k];
-//		}
-//		
-//
-//		//price of unit
-//		uint32_t price = 0;
-//		for (int i = 0; i < 4; i++) {
-//			price = (price << 8) | data[32 + i];
-//		}
-//		order.price = price / 10000;
-//		return order;
-//	}
-//static Order parse_delete_order(const uint8_t* data) {
-//	Order order;
-//
-//	// Message Type 'D' 
-//	order.msg_type = data[0];
-//
-//
-//	uint64_t timestamp = 0;
-//	for (int i = 0; i < 6; i++) {
-//		timestamp = (timestamp << 8) | data[5 + i];
-//	}
-//	order.timestamp_ns = timestamp;
-//
-//
-//	uint64_t order_ref = 0;
-//	for (int i = 0; i < 8; i++) {
-//		order_ref = (order_ref << 8) | data[11 + i];
-//	}
-//	order.order_ref = order_ref;
-//
-//	return order;
-//}
-//
-//
-//};
-
 
 #if defined(_MSC_VER)
 #define FORCE_INLINE __forceinline
@@ -134,51 +59,139 @@ FORCE_INLINE uint64_t read_be48(const uint8_t* p) {
 
 FORCE_INLINE void parse_add_order(const uint8_t* data, Order& order) {
     order.msg_type = 'A';
+    order.stock_locate = read_be16(&data[1]);
     order.timestamp_ns = read_be48(&data[5]);
     order.order_ref = read_be64(&data[11]);
     order.side = data[19];
     order.shares = read_be32(&data[20]);
+    // Stock is at data[24], but we dropped it from Order struct
+    order.price = read_be32(&data[32]);
+}
 
-    memcpy(order.stock, &data[24], 8);
+FORCE_INLINE void parse_add_order_mpid(const uint8_t* data, Order& order) {
+    order.msg_type = 'F';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    order.order_ref = read_be64(&data[11]);
+    order.side = data[19];
+    order.shares = read_be32(&data[20]);
+    order.price = read_be32(&data[32]);
+    // Attribution at data[36]
+}
 
-    order.price = read_be32(&data[32]) * 0.0001;
+FORCE_INLINE void parse_order_executed(const uint8_t* data, Order& order) {
+    order.msg_type = 'E';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    order.order_ref = read_be64(&data[11]);
+    order.shares = read_be32(&data[19]);
+    // Match number at data[23]
+}
+
+FORCE_INLINE void parse_order_executed_with_price(const uint8_t* data, Order& order) {
+    order.msg_type = 'C';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    order.order_ref = read_be64(&data[11]);
+    order.shares = read_be32(&data[19]);
+    // Match number at data[23]
+    order.printable = data[31];
+    order.price = read_be32(&data[32]);
+}
+
+FORCE_INLINE void parse_order_cancel(const uint8_t* data, Order& order) {
+    order.msg_type = 'X';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    order.order_ref = read_be64(&data[11]);
+    order.shares = read_be32(&data[19]);
 }
 
 FORCE_INLINE void parse_delete_order(const uint8_t* data, Order& order) {
     order.msg_type = 'D';
+    order.stock_locate = read_be16(&data[1]);
     order.timestamp_ns = read_be48(&data[5]);
     order.order_ref = read_be64(&data[11]);
-
-    order.side = 0;
-    order.shares = 0;
-    order.price = 0.0;
 }
+
+FORCE_INLINE void parse_order_replace(const uint8_t* data, Order& order) {
+    order.msg_type = 'U';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    order.order_ref = read_be64(&data[11]); // Original ref
+    order.new_order_ref = read_be64(&data[19]);
+    order.shares = read_be32(&data[27]);
+    order.price = read_be32(&data[31]);
+}
+
+FORCE_INLINE void parse_stock_directory(const uint8_t* data, Order& order) {
+    order.msg_type = 'R';
+    order.stock_locate = read_be16(&data[1]);
+    order.timestamp_ns = read_be48(&data[5]);
+    memcpy(order.symbol, &data[11], 8);
+    order.market_category = data[19];
+}
+
 
 
 
 using ParserFn = void(*)(const uint8_t*, Order&);
 
+#include "utils/compiler.hpp"
+
 class ITCHParser {
 private:
     static ParserFn table[256];
+    static std::array<bool, 65536> interest_mask_;
 
 public:
     static void init() {
+        interest_mask_.fill(true); // Default to true if no whitelist is used
         for (int i = 0; i < 256; ++i)
             table[i] = nullptr;
 
         table['A'] = parse_add_order;
+        table['F'] = parse_add_order_mpid;
+        table['E'] = parse_order_executed;
+        table['C'] = parse_order_executed_with_price;
+        table['X'] = parse_order_cancel;
         table['D'] = parse_delete_order;
+        table['U'] = parse_order_replace;
+        table['R'] = parse_stock_directory;
+        table['S'] = [](const uint8_t* d, Order& o) { o.msg_type = 'S'; o.stock_locate = read_be16(&d[1]); };
+        table['P'] = [](const uint8_t* d, Order& o) { o.msg_type = 'P'; o.stock_locate = read_be16(&d[1]); o.price = read_be32(&d[32]); o.shares = read_be32(&d[20]); };
+        table['Q'] = [](const uint8_t* d, Order& o) { o.msg_type = 'Q'; o.stock_locate = read_be16(&d[1]); o.price = read_be32(&d[32]); o.shares = read_be32(&d[20]); };
+        table['B'] = [](const uint8_t* d, Order& o) { o.msg_type = 'B'; o.stock_locate = read_be16(&d[1]); };
     }
 
-    FORCE_INLINE static void parse(const uint8_t* data, Order& order) {
-        ParserFn fn = table[(uint8_t)data[0]];
+    static void set_interest(uint16_t locate, bool interest) {
+        interest_mask_[locate] = interest;
+    }
+
+    static void clear_interest() {
+        interest_mask_.fill(false);
+    }
+
+    FORCE_INLINE static bool parse(const uint8_t* data, Order& order) {
+        uint8_t type = data[0];
+        
+        // System and Directory messages always pass
+        if (type != 'S' && type != 'R' && type != 'H') [[unlikely]] {
+             uint16_t locate = read_be16(&data[1]);
+             if (!interest_mask_[locate]) [[likely]] return false;
+        }
+
+        order.msg_type = 0; // Safety reset
+        ParserFn fn = table[type];
 
         if (LIKELY(fn)) {
             fn(data, order);
+            return true;
         }
+        return false;
     }
 };
 
-ParserFn ITCHParser::table[256];
+inline ParserFn ITCHParser::table[256];
+inline std::array<bool, 65536> ITCHParser::interest_mask_;
 

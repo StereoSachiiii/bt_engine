@@ -15,7 +15,8 @@ void test_push_pop() {
 
 void test_empty_pop() {
     SPSCQueue<int, 8> q;
-    assert(!q.try_pop(int()) && "pop from empty queue should fail");
+    int dummy = 0;
+    assert(!q.try_pop(dummy) && "pop from empty queue should fail");
 
     std::cout << "test_empty_pop OK\n";
 }

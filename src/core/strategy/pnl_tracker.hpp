@@ -2,11 +2,7 @@
 #include "position_manager.hpp"
 #include "../order_book_manager.hpp"
 
-struct PnLSummary {
-    double realized = 0.0;
-    double unrealized = 0.0;
-    double total = 0.0;
-};
+#include "../types/strategy_types.hpp"
 
 class PnLTracker {
 public:

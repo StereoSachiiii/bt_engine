@@ -16,7 +16,7 @@ private:
     const uint32_t max_pos = 1000;              
     const double min_spread = 0.0;             
 
-    struct Quote {
+    struct Quote {  
         double bid = 0;
         double ask = 1e9;
     };
@@ -38,8 +38,8 @@ public:
 
     void on_order_book_update(uint16_t locate, const OrderBook& book) {
         // Trade 
-        double bid = book.best_bid();
-        double ask = book.best_ask();
+        double bid = static_cast<double>(book.best_bid());
+        double ask = static_cast<double>(book.best_ask());
         if (bid == 0 || ask == 0) return;
 
         // Quote at the Market Touch to ensure we are at a price level with real executions

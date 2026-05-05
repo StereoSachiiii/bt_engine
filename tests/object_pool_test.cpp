@@ -52,7 +52,31 @@ void test_concurrent() {
     std::cout << "concurrent OK\n";
 }
 
+void test_single_threaded() {
+    constexpr int N = 1024;
+    SingleThreadedObjectPool<int64_t, N> pool;
+
+    std::vector<int64_t*> ptrs;
+    for (int i = 0; i < N; i++) {
+        int64_t* p = pool.allocate();
+        assert(p != nullptr);
+        *p = i;
+        ptrs.push_back(p);
+    }
+
+    assert(pool.available() == 0);
+    assert(pool.allocate() == nullptr);
+
+    for (auto p : ptrs) {
+        pool.deallocate(p);
+    }
+
+    assert(pool.available() == N);
+    std::cout << "single_threaded OK\n";
+}
+
 int main() {
     test_concurrent();
+    test_single_threaded();
     return 0;
-}
+}
