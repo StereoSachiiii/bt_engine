@@ -223,6 +223,14 @@ public:
         return (idx != -1) ? (uint32_t)memory_->price_levels[1][idx]->total_qty : 0;
     }
 
+    FORCE_INLINE uint32_t qty_at_price(uint8_t side, uint64_t price) const {
+        if (!memory_ || price < base_price_) [[unlikely]] return 0;
+        size_t idx = (size_t)(price - base_price_);
+        if (idx >= PRICE_WINDOW) [[unlikely]] return 0;
+        PriceLevel* lvl = memory_->price_levels[side & 1][idx];
+        return lvl ? (uint32_t)lvl->total_qty : 0;
+    }
+
     
     FORCE_INLINE void update_ofi() {
         uint64_t current_bid = best_bid();
