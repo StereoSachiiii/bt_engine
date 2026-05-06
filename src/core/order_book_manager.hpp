@@ -93,4 +93,8 @@ public:
         OrderBook* book = books_[locate];
         return book ? book->get_order(ref) : nullptr;
     }
+
+    const OrderBook* get_book(uint16_t locate) const {
+        return books_[locate];
+    }
 };

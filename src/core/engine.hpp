@@ -32,7 +32,7 @@ public:
 
         OrderBook* book = manager_.get_or_create_book(current_order_.stock_locate, ' ');
         if (book) {
-            strategy_.on_order_book_update(current_order_.stock_locate, *book);
+            strategy_.on_order_book_update(current_order_.stock_locate, *book, manager_);
             
             if (current_order_.msg_type == 'P' || current_order_.msg_type == 'E') {
                 strategy_.on_trade(current_order_.stock_locate, static_cast<double>(current_order_.price), current_order_.shares);

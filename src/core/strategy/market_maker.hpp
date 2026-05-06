@@ -36,7 +36,7 @@ public:
         matcher_.on_message(event, pos_mgr_, manager);
     }
 
-    void on_order_book_update(uint16_t locate, const OrderBook& book) {
+    void on_order_book_update(uint16_t locate, const OrderBook& book, const OrderBookManager& manager) {
         // Trade 
         double bid = static_cast<double>(book.best_bid());
         double ask = static_cast<double>(book.best_ask());
@@ -60,14 +60,16 @@ public:
         if (position <= -(int32_t)max_pos) (*quotes_)[locate].ask = 1e9;
 
         if ((uint64_t)(*quotes_)[locate].bid != (uint64_t)old_bid) {
-            std::cout << "[Strategy] New BID for Locate " << locate << ": " << ((*quotes_)[locate].bid / 10000.0) << "\n";
-            uint32_t ahead = ((*quotes_)[locate].bid > bid) ? 0 : book.bid_qty();
-            matcher_.place_order(locate, 'B', (uint64_t)(*quotes_)[locate].bid, 100, ahead);
+            uint64_t quote_price = (uint64_t)(*quotes_)[locate].bid;
+            std::cout << "[Strategy] New BID for Locate " << locate << ": " << (quote_price / 10000.0) << "\n";
+            uint32_t ahead = book.qty_at_price('B', quote_price);
+            matcher_.place_order(locate, 'B', quote_price, 100, ahead);
         }
         if ((uint64_t)(*quotes_)[locate].ask != (uint64_t)old_ask) {
-            std::cout << "[Strategy] New ASK for Locate " << locate << ": " << ((*quotes_)[locate].ask / 10000.0) << "\n";
-            uint32_t ahead = ((*quotes_)[locate].ask < ask) ? 0 : book.ask_qty();
-            matcher_.place_order(locate, 'S', (uint64_t)(*quotes_)[locate].ask, 100, ahead);
+            uint64_t quote_price = (uint64_t)(*quotes_)[locate].ask;
+            std::cout << "[Strategy] New ASK for Locate " << locate << ": " << (quote_price / 10000.0) << "\n";
+            uint32_t ahead = book.qty_at_price('S', quote_price);
+            matcher_.place_order(locate, 'S', quote_price, 100, ahead);
         }
 
 

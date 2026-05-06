@@ -37,7 +37,7 @@ public:
         if (event.stock_locate == locate_b_) matcher_b_.on_message(event, pos_mgr_, manager);
     }
 
-    void on_order_book_update(uint16_t locate, const OrderBook& book) {
+    void on_order_book_update(uint16_t locate, const OrderBook& book, const OrderBookManager& manager) {
         if (locate != locate_a_ && locate != locate_b_) [[likely]] return;
 
         double mid = book.weighted_mid();
@@ -66,19 +66,26 @@ public:
         int32_t pos_a = (int32_t)pos_mgr_.get_position(locate_a_).net_qty;
         int32_t pos_b = (int32_t)pos_mgr_.get_position(locate_b_).net_qty;
 
+        const OrderBook* book_a = manager.get_book(locate_a_);
+        const OrderBook* book_b = manager.get_book(locate_b_);
+
         if (z_score > entry_z_ && pos_a >= 0) [[unlikely]] {
             if (locate == locate_a_ && ofi_z < -2.0) [[unlikely]] { 
-                matcher_a_.place_order(locate_a_, 'S', (uint64_t)state_a_.last_mid, trade_qty_, 0);
-                matcher_b_.place_order(locate_b_, 'B', (uint64_t)state_b_.last_mid, trade_qty_, 0);
-                std::cout << "[Pairs] Entry: SELL A / BUY B (Z: " << z_score << ", OFI_Z: " << ofi_z << ")\n";
+                uint32_t ahead_a = book_a ? book_a->qty_at_price('S', (uint64_t)state_a_.last_mid) : 0;
+                uint32_t ahead_b = book_b ? book_b->qty_at_price('B', (uint64_t)state_b_.last_mid) : 0;
+                matcher_a_.place_order(locate_a_, 'S', (uint64_t)state_a_.last_mid, trade_qty_, ahead_a);
+                matcher_b_.place_order(locate_b_, 'B', (uint64_t)state_b_.last_mid, trade_qty_, ahead_b);
+                std::cout << "[Pairs] Entry: SELL A / BUY B (Z: " << z_score << ", OFI_Z: " << ofi_z << ", Q: " << ahead_a << "/" << ahead_b << ")\n";
             }
         }
         
         else if (z_score < -entry_z_ && pos_a <= 0) [[unlikely]] {
             if (locate == locate_a_ && ofi_z > 2.0) [[unlikely]] {
-                matcher_a_.place_order(locate_a_, 'B', (uint64_t)state_a_.last_mid, trade_qty_, 0);
-                matcher_b_.place_order(locate_b_, 'S', (uint64_t)state_b_.last_mid, trade_qty_, 0);
-                std::cout << "[Pairs] Entry: BUY A / SELL B (Z: " << z_score << ", OFI_Z: " << ofi_z << ")\n";
+                uint32_t ahead_a = book_a ? book_a->qty_at_price('B', (uint64_t)state_a_.last_mid) : 0;
+                uint32_t ahead_b = book_b ? book_b->qty_at_price('S', (uint64_t)state_b_.last_mid) : 0;
+                matcher_a_.place_order(locate_a_, 'B', (uint64_t)state_a_.last_mid, trade_qty_, ahead_a);
+                matcher_b_.place_order(locate_b_, 'S', (uint64_t)state_b_.last_mid, trade_qty_, ahead_b);
+                std::cout << "[Pairs] Entry: BUY A / SELL B (Z: " << z_score << ", OFI_Z: " << ofi_z << ", Q: " << ahead_a << "/" << ahead_b << ")\n";
             }
         }
 
