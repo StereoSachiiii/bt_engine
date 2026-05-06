@@ -22,8 +22,6 @@ struct alignas(64) OrderBookMemory {
     };
 
     IndexEntry order_index[INDEX_SIZE];
-    PriceLevel* price_levels_bid[PRICE_WINDOW];
-    PriceLevel* price_levels_ask[PRICE_WINDOW];
-    HierarchicalBitset bid_bits;
-    HierarchicalBitset ask_bits;
+    PriceLevel* price_levels[2][PRICE_WINDOW]; // 0 = Bid, 1 = Ask/Sell
+    HierarchicalBitset bits[2];               // 0 = Bid, 1 = Ask/Sell
 };

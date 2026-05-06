@@ -44,8 +44,8 @@ public:
     {
         memory_ = static_cast<OrderBookMemory*>(alloc_zeroed_aligned(sizeof(OrderBookMemory)));
         if (memory_) {
-            new (&memory_->bid_bits) HierarchicalBitset();
-            new (&memory_->ask_bits) HierarchicalBitset();
+            new (&memory_->bits[0]) HierarchicalBitset(); //b
+            new (&memory_->bits[1]) HierarchicalBitset(); //s      
         }
     }
 
@@ -57,6 +57,16 @@ public:
 
     void set_market_category(char cat) { market_category_ = cat; }
 
+
+    /*
+    *@brief: add new order to orderbook
+    *@param ref: order reference
+    *@param side: order side
+    *@param price: order price
+    *@param qty: order quantity
+    *@param locate: order stock locate
+    *@param ts_ns: order timestamp ns
+    */
     FORCE_INLINE void apply_add(uint64_t ref, uint8_t side, uint64_t price, uint32_t qty, uint16_t locate, uint64_t ts_ns) {
         last_update_ns_ = ts_ns;
         if (order_count_ == 0) [[unlikely]] base_price_ = price - (PRICE_WINDOW / 2);
@@ -65,7 +75,7 @@ public:
             out_of_window_drops_++;
             return;
         }
-
+    
         Order* o = order_pool_.allocate();
         o->order_ref = ref;
         o->side = side;
@@ -77,22 +87,22 @@ public:
         o->prev = o->next = nullptr;
         order_count_++;
 
-        bool is_bid = (side == 'B');
-        size_t idx = (size_t)(price - base_price_);
-        PriceLevel** levels = is_bid ? memory_->price_levels_bid : memory_->price_levels_ask;
-        HierarchicalBitset* bits = is_bid ? &memory_->bid_bits : &memory_->ask_bits;
 
+
+        size_t idx = (size_t)(price - base_price_);
+        uint32_t s = (side & 1); // 0 for 'B', 1 for 'A'/'S'
+        
         if (idx >= PRICE_WINDOW) [[unlikely]] return;
 
-        PriceLevel* lvl = levels[idx];
+        PriceLevel* lvl = memory_->price_levels[s][idx];
         if (!lvl) [[unlikely]] {
             lvl = level_pool_.allocate();
             lvl->price = price;
             lvl->total_qty = qty;
             lvl->head = lvl->tail = o;
             lvl->order_count = 1;
-            levels[idx] = lvl;
-            bits->set(idx);
+            memory_->price_levels[s][idx] = lvl;
+            memory_->bits[s].set(idx);
         } else {
             lvl->tail->next = o;
             o->prev = lvl->tail;
@@ -100,11 +110,17 @@ public:
             lvl->total_qty += qty;
             lvl->order_count++;
         }
-
+        // add to the hashmap index for fast lookup , i use a custom hash , not  std::map or std::unordered_map 
         index_insert_impl(ref, o);
+        // update the order flow imbalance
         update_ofi();
     }
 
+    /*
+    *@brief: delete order from orderbook
+    *@param ref: order reference
+    *@param ts_ns: order timestamp ns
+    */
     FORCE_INLINE void apply_delete(uint64_t ref, uint64_t ts_ns) {
         last_update_ns_ = ts_ns;
         if (!memory_) [[unlikely]] return;
@@ -112,21 +128,21 @@ public:
         Order* o = index_find_impl(ref);
         if (!o) [[unlikely]] return;
 
-        bool is_bid = (o->side == 'B');
+        
+        uint32_t s = (o->side & 1);
         size_t idx = (size_t)(o->price - base_price_);
-        PriceLevel** levels = is_bid ? memory_->price_levels_bid : memory_->price_levels_ask;
-        PriceLevel* lvl = levels[idx];
+        PriceLevel* lvl = memory_->price_levels[s][idx]; 
 
-        if (o->prev) o->prev->next = o->next;
-        else         lvl->head = o->next;
-        if (o->next) o->next->prev = o->prev;
-        else         lvl->tail = o->prev;
+        if (o->prev) o->prev->next = o->next; 
+        else         lvl->head = o->next;    
+        if (o->next) o->next->prev = o->prev; 
+        else         lvl->tail = o->prev;    
 
         lvl->total_qty -= o->shares;
         if (--lvl->order_count == 0) {
-            (is_bid ? &memory_->bid_bits : &memory_->ask_bits)->reset(idx);
-            levels[idx] = nullptr;
-            level_pool_.deallocate(lvl);
+            memory_->bits[s].reset(idx);
+            memory_->price_levels[s][idx] = nullptr;
+            level_pool_.deallocate(lvl); 
         }
 
         index_erase_impl(ref);
@@ -145,29 +161,33 @@ public:
         last_update_ns_ = ts_ns;
         if (!memory_) [[unlikely]] return;
 
+
+        //insta
         Order* o = index_find_impl(ref);
         if (!o) [[unlikely]] return;
 
-        if (qty >= o->shares) {
+        if (qty >= o->shares)[[likely]] {
             apply_delete(ref, ts_ns);
-        } else {
+        } else {//what if it gets partially filled
             o->shares -= qty;
             size_t idx = (size_t)(o->price - base_price_);
-            (o->side == 'B' ? memory_->price_levels_bid : memory_->price_levels_ask)[idx]->total_qty -= qty;
+            memory_->price_levels[o->side & 1][idx]->total_qty -= qty;
         }
         update_ofi();
     }
 
-    void apply_execute(uint64_t ref, uint32_t qty) { apply_cancel(ref, qty); }
 
 
     FORCE_INLINE void apply_replace(uint64_t old_ref, uint64_t new_ref, uint32_t new_qty, uint64_t new_price, uint64_t ts_ns) {
         last_update_ns_ = ts_ns;
+
         Order* old_order = index_find_impl(old_ref);
         if (!old_order) [[unlikely]] return;
+
         uint8_t side = old_order->side;
         uint16_t locate = old_order->stock_locate;
-        apply_delete(old_ref);
+        
+        apply_delete(old_ref, ts_ns);
         apply_add(new_ref, side, new_price, new_qty, locate, ts_ns);
         update_ofi();
     }
@@ -178,26 +198,26 @@ public:
 
     FORCE_INLINE uint64_t best_bid() const {
         if (!memory_) [[unlikely]] return 0;
-        int idx = memory_->bid_bits.find_last();
-        return (idx != -1) ? memory_->price_levels_bid[idx]->price : 0;
+        int idx = memory_->bits[0].find_last();
+        return (idx != -1) ? memory_->price_levels[0][idx]->price : 0;
     }
 
     FORCE_INLINE uint64_t best_ask() const {
         if (!memory_) [[unlikely]] return 0;
-        int idx = memory_->ask_bits.find_first();
-        return (idx != -1) ? memory_->price_levels_ask[idx]->price : 0;
+        int idx = memory_->bits[1].find_first();
+        return (idx != -1) ? memory_->price_levels[1][idx]->price : 0;
     }
 
     FORCE_INLINE uint32_t bid_qty() const {
         if (!memory_) [[unlikely]] return 0;
-        int idx = memory_->bid_bits.find_last();
-        return (idx != -1) ? (uint32_t)memory_->price_levels_bid[idx]->total_qty : 0;
+        int idx = memory_->bits[0].find_last();
+        return (idx != -1) ? (uint32_t)memory_->price_levels[0][idx]->total_qty : 0;
     }
 
     FORCE_INLINE uint32_t ask_qty() const {
         if (!memory_) [[unlikely]] return 0;
-        int idx = memory_->ask_bits.find_first();
-        return (idx != -1) ? (uint32_t)memory_->price_levels_ask[idx]->total_qty : 0;
+        int idx = memory_->bits[1].find_first();
+        return (idx != -1) ? (uint32_t)memory_->price_levels[1][idx]->total_qty : 0;
     }
 
     
@@ -249,16 +269,16 @@ public:
     double get_book_imbalance(int max_levels) const {
         double b_total = 0, a_total = 0;
         int found = 0;
-        int idx = memory_->bid_bits.find_last();
+        int idx = memory_->bits[0].find_last();
         while (idx != -1 && found < max_levels) {
-            b_total += memory_->price_levels_bid[idx]->total_qty;
+            b_total += memory_->price_levels[0][idx]->total_qty;
             idx = -1; // TODO: implement find_next_last for deeper book
             found++;
         }
         found = 0;
-        idx = memory_->ask_bits.find_first();
+        idx = memory_->bits[1].find_first();
         while (idx != -1 && found < max_levels) {
-            a_total += memory_->price_levels_ask[idx]->total_qty;
+            a_total += memory_->price_levels[1][idx]->total_qty;
             idx = -1; // TODO: implement find_next_first for deeper book
             found++;
         }
@@ -300,7 +320,7 @@ private:
         }
         return nullptr;
     }
-
+    // linear probing
     FORCE_INLINE void index_erase_impl(uint64_t ref) {
         size_t i = hash_util::murmur64(ref) & INDEX_MASK;
         while (memory_->order_index[i].ref != 0) {
