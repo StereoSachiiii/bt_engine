@@ -32,7 +32,10 @@ private:
     uint32_t last_bid_qty_ = 0;
     uint64_t last_ask_price_ = 0;
     uint32_t last_ask_qty_ = 0;
-    double ofi_accumulator_ = 0;
+    int64_t ofi_accumulator_ = 0;
+    double ofi_ema_ = 0.0;
+    double ofi_ema_mean_ = 0.0;  // exponential rolling mean for z-score
+    double ofi_ema_var_ = 0.0;   // exponential rolling variance for z-score
     uint64_t total_volume_ = 0;
     uint64_t last_update_ns_ = 0;
     uint64_t out_of_window_drops_ = 0;
@@ -227,25 +230,32 @@ public:
         uint64_t current_ask = best_ask();
         uint32_t current_ask_qty = ask_qty();
 
-        double delta_bid = 0;
+        int32_t delta_bid = 0;
         if (current_bid > last_bid_price_) {
-            delta_bid = (double)current_bid_qty;
+            delta_bid = (int32_t)current_bid_qty;
         } else if (current_bid == last_bid_price_) {
-            delta_bid = (double)current_bid_qty - last_bid_qty_;
+            delta_bid = (int32_t)current_bid_qty - (int32_t)last_bid_qty_;
         } else {
-            delta_bid = -(double)last_bid_qty_; // Level dropped
+            delta_bid = -(int32_t)last_bid_qty_; 
         }
 
-        double delta_ask = 0;
+        int32_t delta_ask = 0;
         if (current_ask < last_ask_price_) {
-            delta_ask = (double)current_ask_qty;
+            delta_ask = (int32_t)current_ask_qty;
         } else if (current_ask == last_ask_price_) {
-            delta_ask = (double)current_ask_qty - last_ask_qty_;
+            delta_ask = (int32_t)current_ask_qty - (int32_t)last_ask_qty_;
         } else {
-            delta_ask = -(double)last_ask_qty_; // Level rose
+            delta_ask = -(int32_t)last_ask_qty_; 
         }
 
-        ofi_accumulator_ += (delta_bid - delta_ask);
+        ofi_accumulator_ += (int64_t)(delta_bid - delta_ask);
+
+        double raw_delta = (double)(delta_bid - delta_ask);
+        ofi_ema_ = config::OFI_ALPHA * raw_delta + (1.0 - config::OFI_ALPHA) * ofi_ema_;
+
+        double delta_from_mean = ofi_ema_ - ofi_ema_mean_;
+        ofi_ema_mean_ += config::ZSCORE_ALPHA * delta_from_mean;
+        ofi_ema_var_ = (1.0 - config::ZSCORE_ALPHA) * (ofi_ema_var_ + config::ZSCORE_ALPHA * delta_from_mean * delta_from_mean);
 
         last_bid_price_ = current_bid;
         last_bid_qty_ = current_bid_qty;
@@ -253,37 +263,46 @@ public:
         last_ask_qty_ = current_ask_qty;
     }
 
-    FORCE_INLINE double get_ofi() const { return ofi_accumulator_; }
+    FORCE_INLINE double get_ofi() const { return ofi_ema_; }
+    FORCE_INLINE double get_ofi_zscore() const {
+        double std = ofi_ema_var_ > 1e-12 ? FAST_SQRT(ofi_ema_var_) : 1.0; //standard deviation
+        return (ofi_ema_ - ofi_ema_mean_) / std;
+    }
+    // Raw accumulator 
+    FORCE_INLINE int64_t get_ofi_raw() const { return ofi_accumulator_; }
     FORCE_INLINE double get_normalized_ofi() const {
         if (total_volume_ == 0) return 0.0;
-        return ofi_accumulator_ / (double)total_volume_;
+        return (double)ofi_accumulator_ / (double)total_volume_;
     }
 
     FORCE_INLINE double get_imbalance() const {
-        uint32_t b = bid_qty();
-        uint32_t a = ask_qty();
+        if (!memory_) [[unlikely]] return 0.0;
+        int bid_idx = memory_->bits[0].find_last();
+        int ask_idx = memory_->bits[1].find_first();
+        uint32_t b = (bid_idx != -1) ? (uint32_t)memory_->price_levels[0][bid_idx]->total_qty : 0;
+        uint32_t a = (ask_idx != -1) ? (uint32_t)memory_->price_levels[1][ask_idx]->total_qty : 0;
         if (b == 0 && a == 0) return 0.0;
         return (double(b) - double(a)) / (double(b) + double(a));
     }
 
-    double get_book_imbalance(int max_levels) const {
-        double b_total = 0, a_total = 0;
-        int found = 0;
+    FORCE_INLINE double get_book_imbalance(int max_levels) const {
+        if (!memory_) [[unlikely]] return 0.0;
+        uint64_t b_total = 0, a_total = 0;
+
         int idx = memory_->bits[0].find_last();
-        while (idx != -1 && found < max_levels) {
+        for (int n = 0; idx != -1 && n < max_levels; n++) {
             b_total += memory_->price_levels[0][idx]->total_qty;
-            idx = -1; // TODO: implement find_next_last for deeper book
-            found++;
+            idx = memory_->bits[0].find_prev(idx);
         }
-        found = 0;
+
         idx = memory_->bits[1].find_first();
-        while (idx != -1 && found < max_levels) {
+        for (int n = 0; idx != -1 && n < max_levels; n++) {
             a_total += memory_->price_levels[1][idx]->total_qty;
-            idx = -1; // TODO: implement find_next_first for deeper book
-            found++;
+            idx = memory_->bits[1].find_next(idx);
         }
+
         if (b_total + a_total == 0) return 0.0;
-        return (b_total - a_total) / (b_total + a_total);
+        return (double)(b_total - a_total) / (double)(b_total + a_total);
     }
 
     uint64_t get_total_volume() const { return total_volume_; }
@@ -291,11 +310,15 @@ public:
     uint64_t get_drops() const { return out_of_window_drops_; }
 
     FORCE_INLINE double weighted_mid() const {
-        uint64_t bb = best_bid();
-        uint64_t ba = best_ask();
-        uint32_t bq = bid_qty();
-        uint32_t aq = ask_qty();
-        if (bq == 0 || aq == 0) return 0.0;
+        if (!memory_) [[unlikely]] return 0.0;
+        int bid_idx = memory_->bits[0].find_last();
+        int ask_idx = memory_->bits[1].find_first();
+        if (bid_idx == -1 || ask_idx == -1) [[unlikely]] return 0.0;
+        uint64_t bb = memory_->price_levels[0][bid_idx]->price;
+        uint64_t ba = memory_->price_levels[1][ask_idx]->price;
+        uint32_t bq = (uint32_t)memory_->price_levels[0][bid_idx]->total_qty;
+        uint32_t aq = (uint32_t)memory_->price_levels[1][ask_idx]->total_qty;
+        if (bq == 0 || aq == 0) [[unlikely]] return 0.0;
         return (double(bb) * aq + double(ba) * bq) / (bq + aq);
     }
 

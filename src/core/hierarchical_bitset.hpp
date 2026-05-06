@@ -85,6 +85,84 @@ struct HierarchicalBitset {
         return static_cast<int>((i0 << 6) + (63 - __builtin_clzll(l0[i0])));
     }
 
+    /**
+     * Find the next set bit strictly after position i (walk asks ascending).
+     * @return -1 if no higher bit is set
+     */
+    FORCE_INLINE int find_next(size_t i) const {
+        if (++i >= L0_SIZE) return -1;
+
+        size_t i0 = i >> 6;
+        uint64_t mask = l0[i0] & (~0ULL << (i & 63));
+        if (mask) return (int)((i0 << 6) + __builtin_ctzll(mask));
+
+        if (++i0 >= L0_WORDS) return -1;
+        size_t i1 = i0 >> 6;
+        mask = l1[i1] & (~0ULL << (i0 & 63));
+        if (mask) {
+            i0 = (i1 << 6) + __builtin_ctzll(mask);
+            return (int)((i0 << 6) + __builtin_ctzll(l0[i0]));
+        }
+
+        if (++i1 >= L1_WORDS) return -1;
+        size_t i2 = i1 >> 6;
+        mask = l2[i2] & (~0ULL << (i1 & 63));
+        if (mask) {
+            i1 = (i2 << 6) + __builtin_ctzll(mask);
+            i0 = (i1 << 6) + __builtin_ctzll(l1[i1]);
+            return (int)((i0 << 6) + __builtin_ctzll(l0[i0]));
+        }
+
+        if (++i2 >= L2_WORDS) return -1;
+        mask = l3 & (~0ULL << i2);
+        if (!mask) return -1;
+        i2 = __builtin_ctzll(mask);
+        i1 = (i2 << 6) + __builtin_ctzll(l2[i2]);
+        i0 = (i1 << 6) + __builtin_ctzll(l1[i1]);
+        return (int)((i0 << 6) + __builtin_ctzll(l0[i0]));
+    }
+
+    /**
+     * Find the previous set bit strictly before position i (walk bids descending).
+     * @return -1 if no lower bit is set
+     */
+    FORCE_INLINE int find_prev(size_t i) const {
+        if (i == 0) return -1;
+        i--;
+
+        size_t i0 = i >> 6;
+        uint64_t mask = l0[i0] & (~0ULL >> (63 - (i & 63)));
+        if (mask) return (int)((i0 << 6) + (63 - __builtin_clzll(mask)));
+
+        if (i0 == 0) return -1;
+        i0--;
+        size_t i1 = i0 >> 6;
+        mask = l1[i1] & (~0ULL >> (63 - (i0 & 63)));
+        if (mask) {
+            i0 = (i1 << 6) + (63 - __builtin_clzll(mask));
+            return (int)((i0 << 6) + (63 - __builtin_clzll(l0[i0])));
+        }
+
+        if (i1 == 0) return -1;
+        i1--;
+        size_t i2 = i1 >> 6;
+        mask = l2[i2] & (~0ULL >> (63 - (i1 & 63)));
+        if (mask) {
+            i1 = (i2 << 6) + (63 - __builtin_clzll(mask));
+            i0 = (i1 << 6) + (63 - __builtin_clzll(l1[i1]));
+            return (int)((i0 << 6) + (63 - __builtin_clzll(l0[i0])));
+        }
+
+        if (i2 == 0) return -1;
+        i2--;
+        mask = l3 & (~0ULL >> (63 - i2));
+        if (!mask) return -1;
+        i2 = 63 - __builtin_clzll(mask);
+        i1 = (i2 << 6) + (63 - __builtin_clzll(l2[i2]));
+        i0 = (i1 << 6) + (63 - __builtin_clzll(l1[i1]));
+        return (int)((i0 << 6) + (63 - __builtin_clzll(l0[i0])));
+    }
+
     
     FORCE_INLINE bool is_empty() const {
         return l3 == 0;

@@ -11,4 +11,8 @@ namespace config {
     inline constexpr size_t PRICE_WINDOW     = 1'000'000;
     inline constexpr size_t INDEX_SIZE        = 1 << 20;  // 1M slots, ~25% load factor at 4M orders (with chaining)
     inline constexpr size_t INDEX_MASK        = INDEX_SIZE - 1;
+
+    // OFI signal parameters
+    inline constexpr double OFI_ALPHA         = 0.05;    // EMA decay for OFI signal (~20 event lookback)
+    inline constexpr double ZSCORE_ALPHA      = 0.001;   // rolling stats decay for z-score normalization
 }

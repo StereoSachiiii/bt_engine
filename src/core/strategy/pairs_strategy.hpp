@@ -38,49 +38,47 @@ public:
     }
 
     void on_order_book_update(uint16_t locate, const OrderBook& book) {
-        if (locate != locate_a_ && locate != locate_b_) return;
+        if (locate != locate_a_ && locate != locate_b_) [[likely]] return;
 
         double mid = book.weighted_mid();
-        if (mid == 0) return;
+        if (mid == 0) [[unlikely]] return;
 
         if (locate == locate_a_) state_a_.last_mid = mid;
         else state_b_.last_mid = mid;
 
-        // Need prices for both to calculate spread
-        if (state_a_.last_mid == 0 || state_b_.last_mid == 0) return;
+       
+        if (state_a_.last_mid == 0 || state_b_.last_mid == 0) [[unlikely]] return;
 
         double spread = state_a_.last_mid - state_b_.last_mid;
         spread_history_.push_back(spread);
         if (spread_history_.size() > window_size_) spread_history_.pop_front();
 
-        if (spread_history_.size() < window_size_) return;
+        if (spread_history_.size() < window_size_) [[unlikely]] return;
 
-        // Calculate Z-Score
         double sum = std::accumulate(spread_history_.begin(), spread_history_.end(), 0.0);
         double mean = sum / spread_history_.size();
         double sq_sum = std::inner_product(spread_history_.begin(), spread_history_.end(), spread_history_.begin(), 0.0);
         double stdev = std::sqrt(sq_sum / spread_history_.size() - mean * mean);
         double z_score = (spread - mean) / (stdev + 0.0001);
 
-        double ofi_a = book.get_ofi(); 
+        double ofi_z = book.get_ofi_zscore(); 
 
         int32_t pos_a = (int32_t)pos_mgr_.get_position(locate_a_).net_qty;
         int32_t pos_b = (int32_t)pos_mgr_.get_position(locate_b_).net_qty;
 
-        //  If spread is too high, Sell A, Buy B (Expect spread to fall)
-        if (z_score > entry_z_ && pos_a >= 0) {
-            if (locate == locate_a_ && ofi_a < -1000) { // Confirmation: Sell pressure on A
+        if (z_score > entry_z_ && pos_a >= 0) [[unlikely]] {
+            if (locate == locate_a_ && ofi_z < -2.0) [[unlikely]] { 
                 matcher_a_.place_order(locate_a_, 'S', (uint64_t)state_a_.last_mid, trade_qty_, 0);
                 matcher_b_.place_order(locate_b_, 'B', (uint64_t)state_b_.last_mid, trade_qty_, 0);
-                std::cout << "[Pairs] Entry: SELL A / BUY B (Z: " << z_score << ", OFI: " << ofi_a << ")\n";
+                std::cout << "[Pairs] Entry: SELL A / BUY B (Z: " << z_score << ", OFI_Z: " << ofi_z << ")\n";
             }
         }
-        // If spread is too low, Buy A, Sell B (Expect spread to rise)
-        else if (z_score < -entry_z_ && pos_a <= 0) {
-            if (locate == locate_a_ && ofi_a > 1000) { // Confirmation: Buy pressure on A
+        
+        else if (z_score < -entry_z_ && pos_a <= 0) [[unlikely]] {
+            if (locate == locate_a_ && ofi_z > 2.0) [[unlikely]] {
                 matcher_a_.place_order(locate_a_, 'B', (uint64_t)state_a_.last_mid, trade_qty_, 0);
                 matcher_b_.place_order(locate_b_, 'S', (uint64_t)state_b_.last_mid, trade_qty_, 0);
-                std::cout << "[Pairs] Entry: BUY A / SELL B (Z: " << z_score << ", OFI: " << ofi_a << ")\n";
+                std::cout << "[Pairs] Entry: BUY A / SELL B (Z: " << z_score << ", OFI_Z: " << ofi_z << ")\n";
             }
         }
 
